@@ -2,22 +2,45 @@ import React from "react";
 import { inject, observer } from "mobx-react";
 
 import ButtonPanel from "components/SideBar/ButtonPanel";
-import Console from "components/SideBar/Console";
-import Notification from "components/SideBar/Notification";
+import SecondaryButton from "components/SideBar/SecondaryButton";
+import WS from "store/websocket";
 
 @inject("store") @observer
 export default class SideBar extends React.Component {
     render() {
-        const { monitor, options } = this.props.store;
+        const { options, enableHMIButtonsOnly, hmi } = this.props.store;
+
+        const settings = {};
+        const optionNames = [...options.mainSideBarOptions, ...options.secondarySideBarOptions];
+        optionNames.forEach(optionName => {
+            settings[optionName] = {
+                active: options[optionName],
+                onClick: () => {
+                    this.props.store.handleOptionToggle(optionName);
+                },
+                disabled: options.isSideBarButtonDisabled(
+                    optionName,
+                    enableHMIButtonsOnly,
+                    hmi.inNavigationMode
+                ),
+            };
+        });
 
         return (
-            <div className="sidebar">
-                <ButtonPanel showConsole={options.showConsole}
-                             onConsole={() => {
-                                     options.toggleShowConsole();
-                                 }} />
-                {options.showConsole ? <Console monitor={monitor} /> :
-                 <Notification monitor={monitor} />}
+            <div className="side-bar">
+                <ButtonPanel settings={settings} />
+                <div className="sub-button-panel">
+                    <SecondaryButton
+                        panelLabel="Audio Capture"
+                        disabled={settings.enableAudioCapture.disabled}
+                        onClick={settings.enableAudioCapture.onClick}
+                        active={settings.enableAudioCapture.active} />
+                    <SecondaryButton
+                        panelLabel="Default Routing"
+                        disabled={settings.showPOI.disabled}
+                        onClick={settings.showPOI.onClick}
+                        active={!options.showRouteEditingBar && options.showPOI} />
+                </div>
             </div>
         );
     }

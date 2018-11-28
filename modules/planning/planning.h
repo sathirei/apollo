@@ -17,59 +17,67 @@
 #ifndef MODULES_PLANNING_PLANNING_H_
 #define MODULES_PLANNING_PLANNING_H_
 
-#include "modules/common/vehicle_state/vehicle_state.h"
-#include "modules/planning/planner/planner.h"
-
 #include <memory>
+#include <string>
 
+#include "modules/common/apollo_app.h"
+#include "modules/common/configs/config_gflags.h"
+#include "modules/common/util/thread_pool.h"
+#include "modules/planning/common/planning_gflags.h"
+#include "modules/planning/navi_planning.h"
+#include "modules/planning/planning_base.h"
+#include "modules/planning/std_planning.h"
+
+/**
+ * @namespace apollo::planning
+ * @brief apollo::planning
+ */
 namespace apollo {
 namespace planning {
 
-class Planning {
+/**
+ * @class planning
+ *
+ * @brief Planning module main class. It processes GPS and IMU as input,
+ * to generate planning info.
+ */
+class Planning : public apollo::common::ApolloApp {
  public:
+  Planning() {
+    if (FLAGS_use_navigation_mode) {
+      planning_base_ = std::unique_ptr<PlanningBase>(new NaviPlanning());
+    } else {
+      planning_base_ = std::unique_ptr<PlanningBase>(new StdPlanning());
+    }
+  }
+  virtual ~Planning() = default;
   /**
-   * @brief Constructor
+   * @brief module name
+   * @return module name
    */
-  Planning();
+  std::string Name() const override { return planning_base_->Name(); }
+
+  virtual void RunOnce() { planning_base_->RunOnce(); }
 
   /**
-   * @brief Destructor
+   * @brief module initialization function
+   * @return initialization status
    */
-  ~Planning() = default;
+  apollo::common::Status Init() override { return planning_base_->Init(); }
 
   /**
-   * @brief Plan the trajectory given current vehicle state
-   * @param vehicle_state variable describes the vehicle state, including
-   * position,
-   *        velocity, acceleration, heading, etc
-   * @param is_on_auto_mode whether the current system is on auto-driving mode
-   * @param publishable_trajectory the computed planning trajectory
+   * @brief module start function
+   * @return start status
    */
-  bool Plan(const common::vehicle_state::VehicleState& vehicle_state,
-            const bool is_on_auto_mode, const double publish_time,
-            std::vector<TrajectoryPoint>* discretized_trajectory);
+  apollo::common::Status Start() override { return planning_base_->Start(); }
 
   /**
-   * @brief Reset the planner to initial state.
+   * @brief module stop function
    */
-  void Reset();
+  void Stop() override { return planning_base_->Stop(); }
 
  private:
-  std::pair<TrajectoryPoint, std::size_t>
-  ComputeStartingPointFromLastTrajectory(const double curr_time) const;
-
-  TrajectoryPoint ComputeStartingPointFromVehicleState(
-      const common::vehicle_state::VehicleState& vehicle_state,
-      const double forward_time) const;
-
-  std::vector<TrajectoryPoint> GetOverheadTrajectory(
-      const std::size_t matched_index, const std::size_t buffer_size);
-
-  std::unique_ptr<Planner> ptr_planner_;
-
-  std::vector<TrajectoryPoint> last_trajectory_;
-
-  double last_header_time_ = 0.0;
+  std::unique_ptr<PlanningBase> planning_base_;
 };
 
 }  // namespace planning

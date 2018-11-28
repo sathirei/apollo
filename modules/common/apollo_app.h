@@ -18,8 +18,8 @@
  * @file
  */
 
-#ifndef MODULES_APOLLO_APP_H_
-#define MODULES_APOLLO_APP_H_
+#ifndef MODULES_COMMON_APOLLO_APP_H_
+#define MODULES_COMMON_APOLLO_APP_H_
 
 #include <csignal>
 #include <string>
@@ -27,7 +27,6 @@
 #include "gflags/gflags.h"
 #include "modules/common/log.h"
 #include "modules/common/status/status.h"
-#include "modules/hmi/utils/hmi_status_helper.h"
 
 #include "ros/include/ros/ros.h"
 
@@ -42,7 +41,7 @@ namespace common {
  * @class ApolloApp
  *
  * @brief The base module class to define the interface of an Apollo app.
- * An Apollo app runs infinitely until being shutdown by SIGINT or ROS. Many
+ * An Apollo app runs indefinitely until being shutdown by SIGINT or ROS. Many
  * essential components in Apollo, such as localization and control are examples
  * of Apollo apps. The APOLLO_MAIN macro helps developer to setup glog, gflag
  * and ROS in one line.
@@ -65,7 +64,12 @@ class ApolloApp {
    */
   virtual ~ApolloApp() = default;
 
- protected:
+  /**
+   * @brief set the number of threads to handle ros message callbacks.
+   * The default thread number is 1
+   */
+  void SetCallbackThreadNumber(uint32_t callback_thread_num);
+
   /**
    * @brief The module initialization function. This is the first function being
    * called when the App starts. Usually this function loads the configurations,
@@ -78,9 +82,9 @@ class ApolloApp {
    * @brief The module start function. Apollo app usually triggered to execute
    * in two ways: 1. Triggered by upstream messages, or 2. Triggered by timer.
    * If an app is triggered by upstream messages, the Start() function usually
-   * register a call back function that will be called when an upstream message
+   * registers a call back function that will be called when an upstream message
    * is received. If an app is triggered by timer, the Start() function usually
-   * register a timer callback function.
+   * registers a timer callback function.
    * @return Status start status
    */
   virtual apollo::common::Status Start() = 0;
@@ -92,14 +96,16 @@ class ApolloApp {
    */
   virtual void Stop() = 0;
 
-  /**
-   * @brief report module status to HMI
-   * @param status HMI status
+ protected:
+  /** The callback thread number
    */
-  virtual void ReportModuleStatus(
-      const apollo::hmi::ModuleStatus::Status status);
+  uint32_t callback_thread_num_ = 1;
 
-  apollo::hmi::ModuleStatus status_;
+ private:
+  /**
+   * @brief Export flag values to <FLAGS_log_dir>/<name>.flags.
+   */
+  void ExportFlags() const;
 };
 
 void apollo_app_sigint_handler(int signal_num);
@@ -118,4 +124,4 @@ void apollo_app_sigint_handler(int signal_num);
     return 0;                                                  \
   }
 
-#endif  // MODULES_APOLLO_APP_H_
+#endif  // MODULES_COMMON_APOLLO_APP_H_

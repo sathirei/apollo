@@ -1,3 +1,5 @@
+load("//tools:cpplint.bzl", "cpplint")
+
 package(default_visibility = ["//visibility:public"])
 
 cc_binary(
@@ -5,6 +7,7 @@ cc_binary(
     srcs = ["canbus_tester.cc"],
     deps = [
         "//modules/canbus:canbus_lib",
+        "//modules/canbus/common:canbus_common",
         "//modules/common",
         "@ros//:ros_common",
     ],
@@ -22,3 +25,5 @@ cc_binary(
         "@ros//:ros_common",
     ],
 )
+
+cpplint()

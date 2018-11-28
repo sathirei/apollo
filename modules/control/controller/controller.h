@@ -30,7 +30,7 @@
 #include "modules/localization/proto/localization.pb.h"
 #include "modules/planning/proto/planning.pb.h"
 
-#include "modules/control/common/definitions.h"
+#include "modules/common/status/status.h"
 
 /**
  * @namespace apollo::control
@@ -61,7 +61,7 @@ class Controller {
    * @param control_conf control configurations
    * @return Status initialization status
    */
-  virtual Status Init(const ControlConf *control_conf) = 0;
+  virtual common::Status Init(const ControlConf *control_conf) = 0;
 
   /**
    * @brief compute control command based on current vehicle status
@@ -72,17 +72,16 @@ class Controller {
    * @param cmd control command
    * @return Status computation status
    */
-  virtual Status ComputeControlCommand(
-      const ::apollo::localization::LocalizationEstimate *localization,
-      const ::apollo::canbus::Chassis *chassis,
-      const ::apollo::planning::ADCTrajectory *trajectory,
-      ::apollo::control::ControlCommand *cmd) = 0;
+  virtual common::Status ComputeControlCommand(
+      const localization::LocalizationEstimate *localization,
+      const canbus::Chassis *chassis, const planning::ADCTrajectory *trajectory,
+      control::ControlCommand *cmd) = 0;
 
   /**
    * @brief reset Controller
    * @return Status reset status
    */
-  virtual Status Reset() = 0;
+  virtual common::Status Reset() = 0;
 
   /**
    * @brief controller name

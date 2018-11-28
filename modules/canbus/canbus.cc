@@ -16,32 +16,33 @@
 
 #include "modules/canbus/canbus.h"
 
-#include "modules/canbus/can_client/can_client_factory.h"
 #include "modules/canbus/common/canbus_gflags.h"
 #include "modules/canbus/vehicle/vehicle_factory.h"
 #include "modules/common/adapters/adapter_manager.h"
 #include "modules/common/adapters/proto/adapter_config.pb.h"
 #include "modules/common/time/time.h"
 #include "modules/common/util/util.h"
+#include "modules/drivers/canbus/can_client/can_client_factory.h"
 
 namespace apollo {
 namespace canbus {
 
-using apollo::common::adapter::AdapterConfig;
-using apollo::common::adapter::AdapterManager;
-using apollo::common::monitor::MonitorMessageItem;
-using apollo::common::Status;
 using apollo::common::ErrorCode;
-
-using apollo::control::ControlCommand;
+using apollo::common::Status;
+using apollo::common::adapter::AdapterManager;
 using apollo::common::time::Clock;
+using apollo::control::ControlCommand;
+using apollo::drivers::canbus::CanClientFactory;
+using apollo::guardian::GuardianCommand;
 
-std::string Canbus::Name() const { return FLAGS_hmi_name; }
+std::string Canbus::Name() const { return FLAGS_canbus_module_name; }
 
 Status Canbus::Init() {
+  AdapterManager::Init(FLAGS_canbus_adapter_config_filename);
+  AINFO << "The adapter manager is successfully initialized.";
+
   // load conf
-  if (!::apollo::common::util::GetProtoFromFile(FLAGS_canbus_conf_file,
-                                                &canbus_conf_)) {
+  if (!common::util::GetProtoFromFile(FLAGS_canbus_conf_file, &canbus_conf_)) {
     return OnError("Unable to load canbus conf file: " +
                    FLAGS_canbus_conf_file);
   }
@@ -50,7 +51,7 @@ Status Canbus::Init() {
   ADEBUG << "Canbus_conf:" << canbus_conf_.ShortDebugString();
 
   // Init can client
-  auto* can_factory = CanClientFactory::instance();
+  auto *can_factory = CanClientFactory::instance();
   can_factory->RegisterCanClients();
   can_client_ = can_factory->CreateCANClient(canbus_conf_.can_card_parameter());
   if (!can_client_) {
@@ -96,9 +97,14 @@ Status Canbus::Init() {
   }
   AINFO << "The vehicle controller is successfully initialized.";
 
-  AdapterManager::Init();
-
-  AINFO << "The adapter manager is successfully initialized.";
+  CHECK(AdapterManager::GetControlCommand()) << "Control is not initialized.";
+  CHECK(AdapterManager::GetGuardian()) << "Guardian is not initialized.";
+  // TODO(QiL) : depreacte this
+  if (!FLAGS_receive_guardian) {
+    AdapterManager::AddControlCommandCallback(&Canbus::OnControlCommand, this);
+  } else {
+    AdapterManager::AddGuardianCallback(&Canbus::OnGuardianCommand, this);
+  }
 
   return Status::OK();
 }
@@ -130,10 +136,9 @@ Status Canbus::Start() {
   const double duration = 1.0 / FLAGS_chassis_freq;
   timer_ = AdapterManager::CreateTimer(ros::Duration(duration),
                                        &Canbus::OnTimer, this);
-  AdapterManager::SetControlCommandCallback(&Canbus::OnControlCommand, this);
 
   // last step: publish monitor messages
-  apollo::common::monitor::MonitorBuffer buffer(&monitor_);
+  apollo::common::monitor::MonitorLogBuffer buffer(&monitor_logger_);
   buffer.INFO("Canbus is started.");
 
   return Status::OK();
@@ -141,7 +146,7 @@ Status Canbus::Start() {
 
 void Canbus::PublishChassis() {
   Chassis chassis = vehicle_controller_->chassis();
-  AdapterManager::FillChassisHeader(FLAGS_node_name, chassis.mutable_header());
+  AdapterManager::FillChassisHeader(FLAGS_canbus_node_name, &chassis);
 
   AdapterManager::PublishChassis(chassis);
   ADEBUG << chassis.ShortDebugString();
@@ -149,13 +154,13 @@ void Canbus::PublishChassis() {
 
 void Canbus::PublishChassisDetail() {
   ChassisDetail chassis_detail;
-  message_manager_->GetChassisDetail(&chassis_detail);
+  message_manager_->GetSensorData(&chassis_detail);
   ADEBUG << chassis_detail.ShortDebugString();
 
   AdapterManager::PublishChassisDetail(chassis_detail);
 }
 
-void Canbus::OnTimer(const ros::TimerEvent&) {
+void Canbus::OnTimer(const ros::TimerEvent &) {
   PublishChassis();
   if (FLAGS_enable_chassis_detail_pub) {
     PublishChassisDetail();
@@ -171,10 +176,9 @@ void Canbus::Stop() {
   vehicle_controller_->Stop();
 }
 
-void Canbus::OnControlCommand(const ControlCommand& control_command) {
+void Canbus::OnControlCommand(const ControlCommand &control_command) {
   int64_t current_timestamp =
-      apollo::common::time::AsInt64<::apollo::common::time::micros>(
-          Clock::Now());
+      apollo::common::time::AsInt64<common::time::micros>(Clock::Now());
   // if command coming too soon, just ignore it.
   if (current_timestamp - last_timestamp_ < FLAGS_min_cmd_interval * 1000) {
     ADEBUG << "Control command comes too soon. Ignore.\n Required "
@@ -197,9 +201,15 @@ void Canbus::OnControlCommand(const ControlCommand& control_command) {
   can_sender_.Update();
 }
 
+void Canbus::OnGuardianCommand(const GuardianCommand &guardian_command) {
+  apollo::control::ControlCommand control_command;
+  control_command.CopyFrom(guardian_command.control_command());
+  OnControlCommand(control_command);
+}
+
 // Send the error to monitor and return it
-Status Canbus::OnError(const std::string& error_msg) {
-  apollo::common::monitor::MonitorBuffer buffer(&monitor_);
+Status Canbus::OnError(const std::string &error_msg) {
+  apollo::common::monitor::MonitorLogBuffer buffer(&monitor_logger_);
   buffer.ERROR(error_msg);
   return Status(ErrorCode::CANBUS_ERROR, error_msg);
 }
